@@ -211,6 +211,44 @@ app.get('/auth/me', async (req, res) => {
   }
 });
 
+// Alias for /api/users/me (Flutter app expects this path)
+app.get('/api/users/me', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const user = await User.findById(decoded.userId).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        user: {
+          _id: user._id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          userType: user.userType,
+          isVerified: user.isVerified,
+          phone: user.phone,
+          addresses: user.addresses,
+          isSeller: user.isSeller || user.userType === 'seller',
+          isDriver: user.isDriver || user.userType === 'driver'
+        }
+      }
+    });
+  } catch (err) {
+    console.error('❌ API/users/me error:', err.message);
+    res.status(401).json({ success: false, message: 'Unauthorized', error: err.message });
+  }
+});
+
 // Placeholder for routes - we will add them back as we remember them
 
 // Debug/Verification Endpoint (reconstructed)

@@ -5,7 +5,9 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { initializeFirebase } from './firebase-config.js';
+import { JWT_SECRET } from './config/authConfig.js';
 import User from './models/User.js';
 import orderRoutes from './routes/orderRoutes.js';
 import fcmRoutes from './fcmRoutes.js';
@@ -18,6 +20,61 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const MPIN_MAX_ATTEMPTS = parseInt(process.env.MPIN_MAX_ATTEMPTS || '5', 10);
+const MPIN_LOCK_MINUTES = parseInt(process.env.MPIN_LOCK_MINUTES || '15', 10);
+
+const normalizePhoneNumber = (input = '') => {
+  if (!input) return '';
+  // Strip non-digits, keep last 11 digits for PH format
+  const digitsOnly = input.replace(/\D/g, '');
+  if (!digitsOnly) return '';
+  if (digitsOnly.startsWith('63') && digitsOnly.length === 12) {
+    return `0${digitsOnly.slice(2)}`;
+  }
+  if (digitsOnly.startsWith('9') && digitsOnly.length === 10) {
+    return `0${digitsOnly}`;
+  }
+  return digitsOnly.length === 11 && digitsOnly.startsWith('0')
+    ? digitsOnly
+    : input.trim();
+};
+
+const buildUserPayload = (user) => ({
+  _id: user._id,
+  email: user.email,
+  firstName: user.firstName,
+  lastName: user.lastName,
+  userType: user.userType,
+  isVerified: user.isVerified,
+  phone: user.phone,
+  phoneVerified: user.phoneVerified,
+  securityMethod: user.securityMethod,
+  biometricEnabled: user.biometricEnabled,
+  mpinFailedAttempts: user.mpinFailedAttempts,
+  mpinLockedUntil: user.mpinLockedUntil,
+  addresses: user.addresses,
+});
+
+const issueTokens = (user) => {
+  const accessToken = jwt.sign(
+    { userId: user._id, email: user.email, phone: user.phone, userType: user.userType },
+    JWT_SECRET,
+    { expiresIn: '8h' }
+  );
+
+  const refreshToken = jwt.sign(
+    { userId: user._id, email: user.email, phone: user.phone },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+
+  return {
+    accessToken,
+    refreshToken,
+    expiresIn: 8 * 3600,
+  };
+};
 
 // Initialize Firebase Admin SDK
 const firebaseInitialized = initializeFirebase();
@@ -58,50 +115,35 @@ app.post('/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    if (!email) {
-      return res.status(400).json({ success: false, message: 'Email is required' });
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password are required' });
     }
 
     // Find user by email
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    // For now, accept any password (TODO: implement proper password verification)
-    // TODO: In production, use bcrypt to hash and verify passwords
-    
-    // Generate JWT tokens
-    const accessToken = jwt.sign(
-      { userId: user._id, email: user.email, userType: user.userType },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '8h' }
-    );
+    const passwordIsValid = user.passwordHash
+      ? await bcrypt.compare(password, user.passwordHash)
+      : true;
 
-    const refreshToken = jwt.sign(
-      { userId: user._id, email: user.email },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
-    );
+    if (!passwordIsValid) {
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
+    }
+
+    const tokens = issueTokens(user);
 
     console.log(`✅ User ${email} logged in successfully`);
 
     res.json({
       success: true,
       message: 'Login successful',
-      user: {
-        _id: user._id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        userType: user.userType,
-        isVerified: user.isVerified,
+      data: {
+        user: buildUserPayload(user),
       },
-      tokens: {
-        accessToken,
-        refreshToken,
-        expiresIn: 8 * 3600
-      }
+      tokens,
     });
   } catch (err) {
     console.error('❌ Login error:', err.message);
@@ -109,68 +151,189 @@ app.post('/auth/login', async (req, res) => {
   }
 });
 
+app.post('/auth/login-mpin', async (req, res) => {
+  try {
+    const { phone, mpin } = req.body;
+
+    const normalizedPhone = normalizePhoneNumber(phone);
+    if (!normalizedPhone || !mpin) {
+      return res.status(400).json({ success: false, message: 'Phone and MPIN are required' });
+    }
+
+    const user = await User.findOne({ phone: normalizedPhone });
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid phone or MPIN' });
+    }
+
+    if (user.mpinLockedUntil && user.mpinLockedUntil > new Date()) {
+      return res.status(423).json({
+        success: false,
+        message: 'MPIN temporarily locked. Please try again later.',
+        unlockAt: user.mpinLockedUntil,
+      });
+    }
+
+    const mpinHash = user.mpinHash || user.pinHash;
+    if (!mpinHash) {
+      return res.status(409).json({ success: false, message: 'MPIN not set for this account' });
+    }
+
+    const isValidMpin = await bcrypt.compare(mpin, mpinHash);
+    if (!isValidMpin) {
+      const failedAttempts = (user.mpinFailedAttempts || 0) + 1;
+      user.mpinFailedAttempts = failedAttempts;
+      user.lastFailedMpinAt = new Date();
+
+      if (failedAttempts >= MPIN_MAX_ATTEMPTS) {
+        const lockUntil = new Date(Date.now() + MPIN_LOCK_MINUTES * 60 * 1000);
+        user.mpinLockedUntil = lockUntil;
+        user.mpinFailedAttempts = 0;
+        await user.save();
+        return res.status(423).json({
+          success: false,
+          message: 'MPIN locked due to too many failed attempts',
+          unlockAt: lockUntil,
+        });
+      }
+
+      await user.save();
+      const remainingAttempts = Math.max(MPIN_MAX_ATTEMPTS - failedAttempts, 0);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid phone or MPIN',
+        remainingAttempts,
+      });
+    }
+
+    if (!user.mpinHash && user.pinHash) {
+      user.mpinHash = mpinHash;
+      user.mpinSetAt = new Date();
+    }
+
+    user.mpinFailedAttempts = 0;
+    user.mpinLockedUntil = null;
+    user.lastMpinLoginAt = new Date();
+    if (user.securityMethod !== 'biometric') {
+      user.securityMethod = 'mpin';
+    }
+    await user.save();
+
+    const tokens = issueTokens(user);
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        user: buildUserPayload(user),
+      },
+      tokens,
+    });
+  } catch (err) {
+    console.error('❌ MPIN login error:', err);
+    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+  }
+});
+
 // Register endpoint
 app.post('/auth/register', async (req, res) => {
   try {
-    const { email, firstName, lastName, phone, address, dateOfBirth, fcmToken, userType = 'buyer' } = req.body;
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ success: false, message: 'User already exists' });
-    }
-
-    // Create new user
-    const newUser = new User({
+    const {
       email,
       firstName,
       lastName,
       phone,
+      password,
       address,
+      addresses,
+      dateOfBirth,
+      fcmToken,
+      userType = 'buyer',
+      mpin,
+      securityMethod = 'mpin',
+    } = req.body;
+
+    const normalizedPhone = normalizePhoneNumber(phone);
+    if (!normalizedPhone) {
+      return res.status(400).json({ success: false, message: 'Valid phone number is required' });
+    }
+
+    if (!mpin || !/^\d{4}$/.test(mpin)) {
+      return res.status(400).json({ success: false, message: '4-digit MPIN is required' });
+    }
+
+    const existingPhone = await User.findOne({ phone: normalizedPhone });
+    if (existingPhone) {
+      return res.status(409).json({ success: false, message: 'Phone number already registered' });
+    }
+
+    if (email) {
+      const existingEmail = await User.findOne({ email: email.toLowerCase() });
+      if (existingEmail) {
+        return res.status(409).json({ success: false, message: 'Email already registered' });
+      }
+    }
+
+    const addressRecords = [];
+    if (Array.isArray(addresses) && addresses.length > 0) {
+      addresses.forEach((item, index) => {
+        if (item && typeof item === 'object') {
+          addressRecords.push({
+            ...item,
+            isDefault: item.isDefault ?? index === 0,
+          });
+        }
+      });
+    } else if (address && typeof address === 'object') {
+      addressRecords.push({
+        ...address,
+        isDefault: address.isDefault ?? true,
+      });
+    }
+
+    const hashedMpin = await bcrypt.hash(mpin, 10);
+    const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
+
+    const newUser = new User({
+      email,
+      firstName,
+      lastName,
+      phone: normalizedPhone,
+      passwordHash: hashedPassword,
       dateOfBirth,
       userType,
       fcmToken,
-      isVerified: false
+      isVerified: false,
+      phoneVerified: false,
+      securityMethod: securityMethod === 'biometric' ? 'biometric' : 'mpin',
+      biometricEnabled: securityMethod === 'biometric',
+      mpinHash: hashedMpin,
+      mpinSetAt: new Date(),
+      addresses: addressRecords,
     });
 
     await newUser.save();
 
-    // Generate JWT tokens
-    const accessToken = jwt.sign(
-      { userId: newUser._id, email: newUser.email, userType: newUser.userType },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '8h' }
-    );
+    const tokens = issueTokens(newUser);
 
-    const refreshToken = jwt.sign(
-      { userId: newUser._id, email: newUser.email },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
-    );
+    console.log(`✅ User ${normalizedPhone} registered successfully`);
 
-    console.log(`✅ User ${email} registered successfully`);
-
-    res.json({
+    res.status(201).json({
       success: true,
       message: 'User registered successfully',
       data: {
-        user: {
-          _id: newUser._id,
-          email: newUser.email,
-          firstName: newUser.firstName,
-          lastName: newUser.lastName,
-          userType: newUser.userType,
-          isVerified: newUser.isVerified,
-        }
+        user: buildUserPayload(newUser),
       },
-      tokens: {
-        accessToken,
-        refreshToken,
-        expiresIn: 8 * 3600
-      }
+      tokens,
     });
   } catch (err) {
-    console.error('❌ Registration error:', err.message);
+    if (err?.code === 11000) {
+      const duplicatedField = Object.keys(err.keyValue || {})[0];
+      return res.status(409).json({
+        success: false,
+        message: `${duplicatedField} already registered`,
+      });
+    }
+    console.error('❌ Registration error:', err);
     res.status(500).json({ success: false, message: 'Server error', error: err.message });
   }
 });
@@ -183,8 +346,8 @@ app.get('/auth/me', async (req, res) => {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    const user = await User.findById(decoded.userId).select('-password');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(decoded.userId).select('-passwordHash -mpinHash -pinHash -refreshTokens');
     
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
@@ -193,16 +356,7 @@ app.get('/auth/me', async (req, res) => {
     res.json({
       success: true,
       data: {
-        user: {
-          _id: user._id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          userType: user.userType,
-          isVerified: user.isVerified,
-          phone: user.phone,
-          addresses: user.addresses
-        }
+        user: buildUserPayload(user)
       }
     });
   } catch (err) {
@@ -219,8 +373,8 @@ app.get('/api/users/me', async (req, res) => {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    const user = await User.findById(decoded.userId).select('-password');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(decoded.userId).select('-passwordHash -mpinHash -pinHash -refreshTokens');
     
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
@@ -230,14 +384,7 @@ app.get('/api/users/me', async (req, res) => {
       success: true,
       data: {
         user: {
-          _id: user._id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          userType: user.userType,
-          isVerified: user.isVerified,
-          phone: user.phone,
-          addresses: user.addresses,
+          ...buildUserPayload(user),
           isSeller: user.isSeller || user.userType === 'seller',
           isDriver: user.isDriver || user.userType === 'driver'
         }

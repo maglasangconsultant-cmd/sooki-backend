@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import Cart from '../models/Cart.js';
+import { JWT_SECRET } from '../config/authConfig.js';
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ function authenticate(req, res, next) {
       return res.status(401).json({ success: false, message: 'Missing or invalid Authorization header' });
     }
     const token = authHeader.split(' ')[1];
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+  const payload = jwt.verify(token, JWT_SECRET);
     // Common payload shapes: userId, id, _id
     req.userId = payload.userId || payload.id || payload._id;
     if (!req.userId) {

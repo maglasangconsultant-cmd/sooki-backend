@@ -5,6 +5,7 @@
 
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import { JWT_SECRET } from '../config/authConfig.js';
 
 /**
  * Middleware to verify user location for laundry services
@@ -23,7 +24,7 @@ const verifyCompostelaLocation = async (req, res, next) => {
     }
 
     // Verify and decode JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+  const decoded = jwt.verify(token, JWT_SECRET);
     const userId = decoded.userId || decoded.id;
 
     // Fetch user from database

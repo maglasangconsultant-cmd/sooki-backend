@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { LaundryOrder, LaundryShop } from '../models/LaundryModels.js';
 import User from '../models/User.js';
+import { JWT_SECRET } from '../config/authConfig.js';
 
 let io;
 const connectedUsers = new Map(); // userId -> socket.id
@@ -34,7 +35,7 @@ export const initializeLaundryWebSocket = (server) => {
         return next(new Error('Authentication token required'));
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+  const decoded = jwt.verify(token, JWT_SECRET);
       const user = await User.findById(decoded.userId).select('firstName lastName city province addresses userType');
       
       if (!user) {

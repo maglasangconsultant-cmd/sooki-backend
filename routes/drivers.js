@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import Driver from '../models/Driver.js';
 import { LaundryOrder } from '../models/LaundryModels.js';
+import { JWT_SECRET } from '../config/authConfig.js';
 // Defer resolving the Order model until runtime to avoid import-time MissingSchemaError
 function getOrderModel() {
   return mongoose.models.Order || mongoose.model('Order');
@@ -18,7 +19,7 @@ function authenticateDriver(req, res, next) {
       return res.status(401).json({ message: 'Access denied. No token provided.' });
     }
     const token = authHeader.replace('Bearer ', '').trim();
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+  const decoded = jwt.verify(token, JWT_SECRET);
     req.driverId = decoded.driverId;
     next();
   } catch (err) {
@@ -71,12 +72,12 @@ router.post('/login', async (req, res) => {
     // NOTE: Following existing user login pattern (no hash verification for now)
     const accessToken = jwt.sign(
       { driverId: driver._id, email: driver.email, role: 'driver' },
-      process.env.JWT_SECRET || 'your-secret-key',
+      JWT_SECRET,
       { expiresIn: '8h' }
     );
     const refreshToken = jwt.sign(
       { driverId: driver._id, email: driver.email, role: 'driver' },
-      process.env.JWT_SECRET || 'your-secret-key',
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
     res.json({

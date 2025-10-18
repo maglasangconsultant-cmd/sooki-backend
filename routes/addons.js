@@ -5,6 +5,7 @@ import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import cloudinary from '../config/cloudinary.js';
 import AddOn from '../models/AddOn.js';
 import User from '../models/User.js';
+import { JWT_SECRET } from '../config/authConfig.js';
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ async function authenticate(req, res, next) {
   }
   const token = authHeader.replace('Bearer ', '').trim();
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+  const payload = jwt.verify(token, JWT_SECRET);
     const user = await User.findById(payload.userId || payload.id || payload._id);
     if (!user) {
       return res.status(401).json({ success: false, error: 'User not found' });

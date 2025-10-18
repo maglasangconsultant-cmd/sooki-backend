@@ -1,15 +1,20 @@
 import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema({
-  email: { type: String, required: true },
+  email: { type: String, trim: true, lowercase: true },
   firstName: String,
   lastName: String,
-  phone: String,
+  phone: {
+    type: String,
+    required: true,
+    trim: true,
+  },
   // Secure password storage
   passwordHash: { type: String },
   dateOfBirth: { type: Date },
   userType: { type: String, enum: ['buyer', 'seller'], default: 'buyer' },
   isVerified: { type: Boolean, default: false },
+  phoneVerified: { type: Boolean, default: false },
   fcmToken: { type: String }, // For push notifications
   addresses: [{
     type: { type: String, enum: ['home', 'work', 'other'], default: 'home' },
@@ -33,15 +38,26 @@ const userSchema = new mongoose.Schema({
   biometricDevices: { type: [String], default: [] },
   securityMethod: {
     type: String,
-    enum: ['biometric', 'pin', 'none'],
+    enum: ['biometric', 'mpin', 'pin', 'none'],
     default: 'none'
   },
+  mpinHash: { type: String },
+  mpinSetAt: { type: Date },
+  // Legacy compatibility: retain pinHash while rolling out mpinHash
   pinHash: { type: String },
   pinSetAt: { type: Date },
+  mpinFailedAttempts: { type: Number, default: 0 },
+  mpinLockedUntil: { type: Date },
+  lastMpinLoginAt: { type: Date },
+  lastFailedMpinAt: { type: Date },
   // Refresh token store (hashed)
   refreshTokens: { type: [String], default: [] }
 }, { timestamps: true });
 
+
+
+userSchema.index({ phone: 1 }, { unique: true, sparse: true });
+userSchema.index({ email: 1 }, { unique: true, sparse: true });
 
 
 

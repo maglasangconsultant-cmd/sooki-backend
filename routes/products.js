@@ -6,6 +6,7 @@ import fs from 'fs';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import cloudinary from '../config/cloudinary.js';
 import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config/authConfig.js';
 import User from '../models/User.js';
 import Product from '../models/Product.js';
 import AddOn from '../models/AddOn.js';
@@ -23,7 +24,7 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ success: false, message: 'Missing or invalid Authorization header' });
     }
     const token = authHeader.replace('Bearer ', '').trim();
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+  const payload = jwt.verify(token, JWT_SECRET);
 
     // Attach user if available
     const userId = payload.userId || payload.id || payload._id;

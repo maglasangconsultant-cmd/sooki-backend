@@ -41,9 +41,10 @@ const sellerSchema = new mongoose.Schema({
   bio: String,
 
   // Geolocation for fast driver matching (optional)
+  // Only include if coordinates are provided, otherwise undefined
   location: {
-    type: { type: String, enum: ['Point'], default: 'Point' },
-    coordinates: { type: [Number], default: undefined } // [lng, lat]
+    type: { type: String, enum: ['Point'] },
+    coordinates: { type: [Number] } // [lng, lat]
   },
 
   // Seller auth code (hashed)

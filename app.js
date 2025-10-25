@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import { initializeFirebase } from './firebase-config.js';
 import { JWT_SECRET } from './config/authConfig.js';
 import User from './models/User.js';
+import Seller from './models/Seller.js';
 import orderRoutes from './routes/orderRoutes.js';
 import fcmRoutes from './fcmRoutes.js';
 import paymentRoutes from './paymentRoutes.js';
@@ -334,6 +335,165 @@ app.post('/auth/register', async (req, res) => {
       });
     }
     console.error('❌ Registration error:', err);
+    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+  }
+});
+
+// Register as Seller endpoint - The Sooki Promise: "We got you, promise." 🤝
+app.post('/auth/register-seller', async (req, res) => {
+  try {
+    const {
+      userId,
+      email,
+      firstName,
+      lastName,
+      phoneNumber,
+      businessName,
+      businessAddress,
+      shopSameAsBusiness,
+      hasPhysicalStore,
+      shopName,
+      shopAddress,
+      categories,
+      bio,
+      paymentMethods,
+      sellerAuthCode,
+      deviceId,
+      fcmToken
+    } = req.body;
+
+    // Validate required fields
+    if (!userId || !email || !firstName || !lastName || !phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: userId, email, firstName, lastName, phoneNumber'
+      });
+    }
+
+    // Validate Philippine phone number format
+    if (!/^09\d{9}$/.test(phoneNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Philippine phone number format (must be 09XXXXXXXXX)'
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Check if user is already a seller
+    if (user.isSeller) {
+      return res.status(409).json({ success: false, message: 'User is already registered as a seller' });
+    }
+
+    // Check if seller with this phone already exists
+    const existingSeller = await Seller.findOne({ phoneNumber });
+    if (existingSeller) {
+      return res.status(409).json({ success: false, message: 'Phone number already registered as seller' });
+    }
+
+    // Hash seller auth code if provided
+    let hashedAuthCode = null;
+    if (sellerAuthCode) {
+      hashedAuthCode = await bcrypt.hash(sellerAuthCode, 10);
+    }
+
+    // Prepare shop address (use business address if shopSameAsBusiness)
+    let finalShopAddress = null;
+    if (hasPhysicalStore) {
+      if (shopSameAsBusiness && businessAddress) {
+        finalShopAddress = businessAddress;
+      } else if (shopAddress) {
+        finalShopAddress = shopAddress;
+      }
+    }
+
+    // Create new seller
+    const sellerData = {
+      userId: user._id,
+      email,
+      firstName,
+      lastName,
+      phoneNumber,
+      businessName: businessName || shopName || 'My Business',
+      businessAddress: businessAddress || {
+        street: 'TBD',
+        barangay: 'TBD',
+        city: 'TBD',
+        province: 'TBD',
+        country: 'Philippines'
+      },
+      hasPhysicalStore: hasPhysicalStore || false,
+      shopName: hasPhysicalStore ? (shopName || businessName) : undefined,
+      shopAddress: finalShopAddress,
+      categories: categories || [],
+      bio: bio || '',
+      paymentMethods: paymentMethods || [],
+      sellerAuthCodeHash: hashedAuthCode,
+      deviceBindings: deviceId ? [{
+        deviceId,
+        boundAt: new Date(),
+        lastAuthAt: new Date()
+      }] : [],
+      lastDeviceAuthAt: deviceId ? new Date() : undefined,
+      fcmToken: fcmToken || user.fcmToken,
+      isVerified: false,
+      registrationDate: new Date()
+    };
+
+    // Don't include location field if not provided (schema has default)
+    // location will be set to undefined and won't trigger geospatial index error
+    
+    const newSeller = new Seller(sellerData);
+
+    await newSeller.save();
+
+    // Update user to mark as seller
+    user.isSeller = true;
+    await user.save();
+
+    // Issue new tokens with updated user status
+    const tokens = issueTokens(user);
+
+    console.log(`✅ Seller ${phoneNumber} (${businessName || shopName}) registered successfully`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Seller registered successfully! Sooki will handle the rest — PROMISE. 🤝',
+      data: {
+        seller: {
+          _id: newSeller._id,
+          userId: newSeller.userId,
+          email: newSeller.email,
+          firstName: newSeller.firstName,
+          lastName: newSeller.lastName,
+          phoneNumber: newSeller.phoneNumber,
+          businessName: newSeller.businessName,
+          shopName: newSeller.shopName,
+          hasPhysicalStore: newSeller.hasPhysicalStore,
+          categories: newSeller.categories,
+          isVerified: newSeller.isVerified,
+          registrationDate: newSeller.registrationDate
+        },
+        user: {
+          ...buildUserPayload(user),
+          isSeller: true
+        }
+      },
+      tokens
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      const duplicatedField = Object.keys(err.keyValue || {})[0];
+      return res.status(409).json({
+        success: false,
+        message: `${duplicatedField} already registered as seller`
+      });
+    }
+    console.error('❌ Seller registration error:', err);
     res.status(500).json({ success: false, message: 'Server error', error: err.message });
   }
 });

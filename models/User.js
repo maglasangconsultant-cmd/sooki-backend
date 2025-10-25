@@ -12,6 +12,8 @@ const userSchema = new mongoose.Schema({
   // Secure password storage
   passwordHash: { type: String },
   dateOfBirth: { type: Date },
+  age: { type: Number, required: false }, // Optional: can be calculated from dateOfBirth
+  gender: { type: String, enum: ['male', 'female', 'other'], required: false },
   userType: { type: String, enum: ['buyer', 'seller'], default: 'buyer' },
   isVerified: { type: Boolean, default: false },
   phoneVerified: { type: Boolean, default: false },
@@ -58,6 +60,22 @@ const userSchema = new mongoose.Schema({
 
 userSchema.index({ phone: 1 }, { unique: true, sparse: true });
 userSchema.index({ email: 1 }, { unique: true, sparse: true });
+
+// Virtual field: Calculate age from dateOfBirth dynamically
+userSchema.virtual('calculatedAge').get(function() {
+  if (!this.dateOfBirth) return null;
+  const today = new Date();
+  let age = today.getFullYear() - this.dateOfBirth.getFullYear();
+  const monthDiff = today.getMonth() - this.dateOfBirth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < this.dateOfBirth.getDate())) {
+    age--;
+  }
+  return age;
+});
+
+// Include virtuals in JSON responses
+userSchema.set('toJSON', { virtuals: true });
+userSchema.set('toObject', { virtuals: true });
 
 
 

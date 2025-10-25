@@ -6,6 +6,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import http from 'http';
 import { initializeFirebase } from './firebase-config.js';
 import { JWT_SECRET } from './config/authConfig.js';
 import User from './models/User.js';
@@ -16,6 +17,7 @@ import paymentRoutes from './paymentRoutes.js';
 import psgcRoutes from './psgcRoutes.js';
 import userRoutes from './userRoutes.js';
 import productRoutes from './productRoutes.js';
+import { initializeLaundryWebSocket } from './websocket/laundryWebSocket.js';
 
 dotenv.config();
 
@@ -55,6 +57,9 @@ const buildUserPayload = (user) => ({
   mpinFailedAttempts: user.mpinFailedAttempts,
   mpinLockedUntil: user.mpinLockedUntil,
   addresses: user.addresses,
+  dateOfBirth: user.dateOfBirth,
+  gender: user.gender,
+  age: user.age || (user.dateOfBirth ? Math.floor((Date.now() - new Date(user.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null),
 });
 
 const issueTokens = (user) => {
@@ -247,11 +252,21 @@ app.post('/auth/register', async (req, res) => {
       address,
       addresses,
       dateOfBirth,
+      gender,
       fcmToken,
       userType = 'buyer',
       mpin,
       securityMethod = 'mpin',
     } = req.body;
+
+    // DEBUG: Log registration data
+    console.log('📝 Registration request:', {
+      phone,
+      dateOfBirth,
+      gender,
+      firstName,
+      lastName
+    });
 
     const normalizedPhone = normalizePhoneNumber(phone);
     if (!normalizedPhone) {
@@ -301,6 +316,7 @@ app.post('/auth/register', async (req, res) => {
       phone: normalizedPhone,
       passwordHash: hashedPassword,
       dateOfBirth,
+      gender,
       userType,
       fcmToken,
       isVerified: false,
@@ -608,8 +624,20 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
+// Create HTTP server and initialize WebSocket
+const server = http.createServer(app);
+
+// Initialize Socket.IO for laundry service
+try {
+  initializeLaundryWebSocket(server);
+  console.log('✅ Laundry WebSocket initialized');
+} catch (error) {
+  console.error('❌ Failed to initialize Laundry WebSocket:', error);
+}
+
+server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Local: http://localhost:${PORT}`);
   console.log(`📍 Health check: http://localhost:${PORT}/health`);
+  console.log(`📍 Laundry Socket: ws://localhost:${PORT}/laundry-socket`);
 });

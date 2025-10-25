@@ -270,22 +270,34 @@ app.post('/auth/register', async (req, res) => {
 
     const normalizedPhone = normalizePhoneNumber(phone);
     if (!normalizedPhone) {
-      return res.status(400).json({ success: false, message: 'Valid phone number is required' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Uie ka Sooki! Palihug butang ug valid phone number ha? 😊' 
+      });
     }
 
     if (!mpin || !/^\d{4}$/.test(mpin)) {
-      return res.status(400).json({ success: false, message: '4-digit MPIN is required' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Palihug butang ug 4-digit MPIN para secure imong account! 🔒' 
+      });
     }
 
     const existingPhone = await User.findOne({ phone: normalizedPhone });
     if (existingPhone) {
-      return res.status(409).json({ success: false, message: 'Phone number already registered' });
+      return res.status(409).json({ 
+        success: false, 
+        message: 'Oops! Naa na ning number sa Sooki! Try to login nalang or use lain number? 😅' 
+      });
     }
 
     if (email) {
       const existingEmail = await User.findOne({ email: email.toLowerCase() });
       if (existingEmail) {
-        return res.status(409).json({ success: false, message: 'Email already registered' });
+        return res.status(409).json({ 
+          success: false, 
+          message: 'Naa na ni nga email sa Sooki! Nag-login nalang or lain email? 💚' 
+        });
       }
     }
 
@@ -336,7 +348,7 @@ app.post('/auth/register', async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'User registered successfully',
+      message: 'Welcome sa Sooki! Your account is ready na! 💚',
       data: {
         user: buildUserPayload(newUser),
       },
@@ -345,13 +357,18 @@ app.post('/auth/register', async (req, res) => {
   } catch (err) {
     if (err?.code === 11000) {
       const duplicatedField = Object.keys(err.keyValue || {})[0];
+      const friendlyFieldName = duplicatedField === 'phone' ? 'phone number' : duplicatedField;
       return res.status(409).json({
         success: false,
-        message: `${duplicatedField} already registered`,
+        message: `Uy! Naa na ning ${friendlyFieldName} sa Sooki! Nag-login nalang or lain ${friendlyFieldName}? 😊`,
       });
     }
     console.error('❌ Registration error:', err);
-    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Pasensya brad/sis! May technical issue si Sooki karon. Try again later? 🙏',
+      error: err.message 
+    });
   }
 });
 

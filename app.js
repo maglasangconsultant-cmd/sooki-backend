@@ -53,6 +53,7 @@ const normalizePhoneNumber = (input = '') => {
   }
   
   // Final validation: must be 11 digits starting with 09
+  // This catches edge cases like "631234567890" which would normalize to "01234567890"
   if (!/^09\d{9}$/.test(normalized)) {
     return '';
   }

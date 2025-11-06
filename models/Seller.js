@@ -14,25 +14,27 @@ const sellerSchema = new mongoose.Schema({
   },
 
   // Business info (legal entity)
+  // ✅ Made address fields optional since we use GPS coordinates instead
   businessName: { type: String },
   businessAddress: {
-    street: { type: String, required: true },
-    barangay: { type: String, required: true },
-    city: { type: String, required: true },
-    province: { type: String, required: true },
-    zipCode: { type: String },
+    street: { type: String, default: "TBD" },
+    barangay: { type: String, default: "TBD" },
+    city: { type: String, default: "TBD" },
+    province: { type: String, default: "TBD" },
+    zipCode: { type: String, default: "" },
     country: { type: String, default: "Philippines" }
   },
 
   // Shop info (physical store)
+  // ✅ GPS coordinates are the source of truth, address is optional text
   hasPhysicalStore: { type: Boolean, default: false },
   shopName: { type: String, required: function () { return this.hasPhysicalStore; } },
   shopAddress: {
-    street: { type: String },
-    barangay: { type: String },
-    city: { type: String },
-    province: { type: String },
-    zipCode: { type: String },
+    street: { type: String, default: "" },
+    barangay: { type: String, default: "TBD" },
+    city: { type: String, default: "TBD" },
+    province: { type: String, default: "TBD" },
+    zipCode: { type: String, default: "" },
     country: { type: String, default: "Philippines" }
   },
 

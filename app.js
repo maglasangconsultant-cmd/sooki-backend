@@ -374,6 +374,7 @@ app.post('/auth/register', async (req, res) => {
 
 // Register as Seller endpoint - The Sooki Promise: "We got you, promise." 🤝
 app.post('/auth/register-seller', async (req, res) => {
+  console.log('🎯 /auth/register-seller called'); // ✅ ADD LOGGING
   try {
     const {
       userId,
@@ -387,16 +388,24 @@ app.post('/auth/register-seller', async (req, res) => {
       hasPhysicalStore,
       shopName,
       shopAddress,
+      shopLatitude,
+      shopLongitude,
       categories,
       bio,
       paymentMethods,
       sellerAuthCode,
       deviceId,
-      fcmToken
+      fcmToken,
+      mpin // ✅ NEW: MPIN for verification gate
     } = req.body;
+
+    console.log(`📧 Registering seller: ${email}`); // ✅ ADD LOGGING
+    console.log(`📍 GPS: lat=${shopLatitude}, lng=${shopLongitude}`); // ✅ ADD LOGGING
+    console.log(`🔐 MPIN provided: ${mpin ? 'YES' : 'NO'}`); // ✅ ADD LOGGING
 
     // Validate required fields
     if (!userId || !email || !firstName || !lastName || !phoneNumber) {
+      console.log('❌ Missing required fields'); // ✅ ADD LOGGING
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: userId, email, firstName, lastName, phoneNumber'
@@ -415,6 +424,23 @@ app.post('/auth/register-seller', async (req, res) => {
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // ✅ MPIN GATE: Verify MPIN if user has it set
+    if (user.mpinHash && mpin) {
+      const mpinValid = await bcrypt.compare(mpin, user.mpinHash);
+      if (!mpinValid) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Invalid MPIN. Please enter your correct MPIN to proceed.' 
+        });
+      }
+      console.log('✅ MPIN verified for seller registration');
+    } else if (user.mpinHash && !mpin) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'MPIN required. Please enter your MPIN to register as seller.' 
+        });
     }
 
     // Check if user is already a seller
@@ -477,21 +503,33 @@ app.post('/auth/register-seller', async (req, res) => {
       registrationDate: new Date()
     };
 
-    // Don't include location field if not provided (schema has default)
-    // location will be set to undefined and won't trigger geospatial index error
-    
+    // ✅ Add GPS location if coordinates provided
+    if (shopLatitude != null && shopLongitude != null) {
+      sellerData.location = {
+        type: 'Point',
+        coordinates: [shopLongitude, shopLatitude] // GeoJSON format: [lng, lat]
+      };
+      console.log(`📍 GPS Location set: ${shopLatitude}, ${shopLongitude}`); // ✅ ADD LOGGING
+    } else {
+      console.log('⚠️  No GPS coordinates provided'); // ✅ ADD LOGGING
+    }
+
     const newSeller = new Seller(sellerData);
 
     await newSeller.save();
+    console.log(`✅ Seller document created: ${newSeller._id}`); // ✅ ADD LOGGING
 
-    // Update user to mark as seller
+    // ✅ CRITICAL: Update user to mark as seller
     user.isSeller = true;
+    user.userType = 'seller'; // Also set userType for compatibility
     await user.save();
+    console.log(`✅ User flags updated: isSeller=${user.isSeller}, userType=${user.userType}`); // ✅ ADD LOGGING
 
     // Issue new tokens with updated user status
     const tokens = issueTokens(user);
 
     console.log(`✅ Seller ${phoneNumber} (${businessName || shopName}) registered successfully`);
+    console.log(`📍 GPS Location: ${shopLatitude}, ${shopLongitude}`);
 
     res.status(201).json({
       success: true,
@@ -613,6 +651,101 @@ app.get('/api/debug-info', async (req, res) => {
   }
 });
 
+// FIX: Sync isSeller flag for existing sellers
+app.post('/api/fix-seller-flag', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email required' });
+    }
+
+    // Find the user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Check if they have a Seller document
+    const seller = await Seller.findOne({ userId: user._id });
+    if (!seller) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'No seller document found for this user' 
+      });
+    }
+
+    console.log(`🔧 Fixing isSeller flag for ${email}`);
+    console.log(`   Before: isSeller=${user.isSeller}, userType=${user.userType}`);
+
+    // Update the flags
+    user.isSeller = true;
+    user.userType = 'seller';
+    await user.save();
+
+    console.log(`   After: isSeller=${user.isSeller}, userType=${user.userType}`);
+    console.log(`   ✅ Fixed!`);
+
+    res.json({ 
+      success: true, 
+      message: 'User flags updated successfully',
+      data: {
+        email: user.email,
+        isSeller: user.isSeller,
+        userType: user.userType,
+        sellerId: seller._id
+      }
+    });
+  } catch (error) {
+    console.error('❌ Fix seller flag error:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+});
+
+// RESET: Remove seller status for testing
+app.post('/api/reset-seller', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email required' });
+    }
+
+    // Find the user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    console.log(`🗑️  Resetting seller status for ${email}`);
+
+    // Delete Seller document
+    const deleteResult = await Seller.deleteOne({ userId: user._id });
+    console.log(`   Deleted ${deleteResult.deletedCount} Seller document(s)`);
+
+    // Reset User flags
+    user.isSeller = false;
+    user.userType = 'buyer';
+    await user.save();
+
+    console.log(`   ✅ User reset! Now can register as seller again with MPIN gate`);
+
+    res.json({ 
+      success: true, 
+      message: 'Seller status reset successfully. You can now register as seller again.',
+      data: {
+        email: user.email,
+        isSeller: user.isSeller,
+        userType: user.userType,
+        deletedSellers: deleteResult.deletedCount
+      }
+    });
+  } catch (error) {
+    console.error('❌ Reset seller error:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+});
+
 app.use('/api/orders', orderRoutes);
 app.use('/api/fcm', fcmRoutes);
 app.use('/api/payment', paymentRoutes);
@@ -657,4 +790,31 @@ server.listen(PORT, () => {
   console.log(`📍 Local: http://localhost:${PORT}`);
   console.log(`📍 Health check: http://localhost:${PORT}/health`);
   console.log(`📍 Laundry Socket: ws://localhost:${PORT}/laundry-socket`);
+});
+
+// ==================== ERROR HANDLERS ====================
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  console.error('Stack:', error.stack);
+  // Don't exit - let the process continue
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  // Don't exit - let the process continue
+});
+
+// Handle SIGTERM gracefully
+process.on('SIGTERM', () => {
+  console.log('⚠️  SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('✅ HTTP server closed');
+    mongoose.connection.close(false, () => {
+      console.log('✅ MongoDB connection closed');
+      process.exit(0);
+    });
+  });
 });

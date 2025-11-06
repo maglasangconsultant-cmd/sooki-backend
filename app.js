@@ -519,11 +519,12 @@ app.post('/auth/register-seller', async (req, res) => {
     await newSeller.save();
     console.log(`✅ Seller document created: ${newSeller._id}`); // ✅ ADD LOGGING
 
-    // ✅ CRITICAL: Update user to mark as seller
+    // ✅ CRITICAL: Update user to mark as seller AND link sellerId
     user.isSeller = true;
     user.userType = 'seller'; // Also set userType for compatibility
+    user.sellerId = newSeller._id; // ✅ LINK to Seller document for data integrity
     await user.save();
-    console.log(`✅ User flags updated: isSeller=${user.isSeller}, userType=${user.userType}`); // ✅ ADD LOGGING
+    console.log(`✅ User flags updated: isSeller=${user.isSeller}, userType=${user.userType}, sellerId=${user.sellerId}`); // ✅ ADD LOGGING
 
     // Issue new tokens with updated user status
     const tokens = issueTokens(user);
@@ -676,14 +677,15 @@ app.post('/api/fix-seller-flag', async (req, res) => {
     }
 
     console.log(`🔧 Fixing isSeller flag for ${email}`);
-    console.log(`   Before: isSeller=${user.isSeller}, userType=${user.userType}`);
+    console.log(`   Before: isSeller=${user.isSeller}, userType=${user.userType}, sellerId=${user.sellerId}`);
 
-    // Update the flags
+    // Update the flags AND link sellerId
     user.isSeller = true;
     user.userType = 'seller';
+    user.sellerId = seller._id; // ✅ LINK to Seller document
     await user.save();
 
-    console.log(`   After: isSeller=${user.isSeller}, userType=${user.userType}`);
+    console.log(`   After: isSeller=${user.isSeller}, userType=${user.userType}, sellerId=${user.sellerId}`);
     console.log(`   ✅ Fixed!`);
 
     res.json({ 

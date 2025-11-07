@@ -21,6 +21,9 @@ import { initializeLaundryWebSocket } from './websocket/laundryWebSocket.js';
 
 dotenv.config();
 
+// 🔍 GROK DEBUG: Enable Mongoose query logging to see raw MongoDB operations
+mongoose.set('debug', true);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -522,14 +525,32 @@ app.post('/auth/register-seller', async (req, res) => {
     const newSeller = new Seller(sellerData);
 
     await newSeller.save();
-    console.log(`✅ Seller document created: ${newSeller._id}`); // ✅ ADD LOGGING
+    console.log(`✅ Seller document created: ${newSeller._id} (type: ${typeof newSeller._id}, valid: ${mongoose.Types.ObjectId.isValid(newSeller._id)})`);
+
+    // 🔍 GROK FIX: Fetch FRESH user instance to avoid stale state issues
+    const freshUser = await User.findById(user._id);
+    if (!freshUser) {
+      return res.status(404).json({ success: false, message: 'User not found after seller creation' });
+    }
 
     // ✅ CRITICAL: Update user to mark as seller AND link sellerId
-    user.isSeller = true;
-    user.userType = 'seller'; // Also set userType for compatibility
-    user.sellerId = newSeller._id; // ✅ LINK to Seller document for data integrity
-    await user.save();
-    console.log(`✅ User flags updated: isSeller=${user.isSeller}, userType=${user.userType}, sellerId=${user.sellerId}`); // ✅ ADD LOGGING
+    freshUser.isSeller = true;
+    freshUser.userType = 'seller'; // Also set userType for compatibility
+    freshUser.sellerId = newSeller._id; // ✅ LINK to Seller document for data integrity
+
+    console.log(`🔍 Pre-save check: isSeller=${freshUser.isSeller}, userType=${freshUser.userType}, sellerId=${freshUser.sellerId} (type: ${typeof freshUser.sellerId})`);
+
+    // 🔍 GROK FIX: Force mark fields as modified (tells Mongoose they changed)
+    freshUser.markModified('sellerId');
+    freshUser.markModified('isSeller');
+    freshUser.markModified('userType');
+
+    await freshUser.save({ validateModifiedOnly: true });
+    console.log(`✅ User saved: isSeller=${freshUser.isSeller}, userType=${freshUser.userType}, sellerId=${freshUser.sellerId}`);
+
+    // 🔍 GROK FIX: IMMEDIATE DB VERIFY (critical diagnostic!)
+    const dbVerify = await User.findById(freshUser._id).select('isSeller userType sellerId email');
+    console.log(`🗄️ DB IMMEDIATE CHECK: ${JSON.stringify(dbVerify)}`);
 
     // Issue new tokens with updated user status
     const tokens = issueTokens(user);

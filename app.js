@@ -785,9 +785,9 @@ app.post('/api/reset-seller', async (req, res) => {
     const deleteResult = await Seller.deleteOne({ userId: user._id });
     console.log(`   Deleted ${deleteResult.deletedCount} Seller document(s)`);
 
-    // Reset User flags
-    user.isSeller = false;
+    // Reset User to buyer and clear sellerInfo
     user.userType = 'buyer';
+    user.sellerInfo = { sellerId: null };
     await user.save();
 
     console.log(`   ✅ User reset! Now can register as seller again with MPIN gate`);

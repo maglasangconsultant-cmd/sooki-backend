@@ -64,9 +64,10 @@ const buildUserPayload = (user) => ({
   gender: user.gender,
   age: user.age || (user.dateOfBirth ? Math.floor((Date.now() - new Date(user.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null),
   // ✅ Include seller/driver flags and IDs for frontend
-  isSeller: user.isSeller || false,
-  isDriver: user.isDriver || false,
-  sellerId: user.sellerId || null,
+  // ✅ Include seller/driver info from nested schemas
+  isSeller: user.userType === 'seller' || false,
+  isDriver: user.userType === 'driver' || false,
+  sellerId: user.sellerInfo?.sellerId || null,
   driverId: user.driverId || null,
 });
 

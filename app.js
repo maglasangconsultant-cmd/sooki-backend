@@ -881,3 +881,12 @@ process.on('SIGTERM', () => {
     });
   });
 });
+// 🔍 TEST: Identify which repo Render is using
+app.get('/api/test-repo-identity', (req, res) => {
+  res.json({
+    success: true,
+    repoSource: 'STANDALONE_TMP_SOOKI_BACKEND',
+    timestamp: new Date().toISOString(),
+    message: 'This is from /tmp/sooki-backend repo'
+  });
+});

@@ -704,6 +704,41 @@ app.post('/api/fix-seller-flag', async (req, res) => {
   }
 });
 
+// DEBUG: Check user state
+app.post('/api/debug-user', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email required' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const seller = await Seller.findOne({ userId: user._id });
+
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        isSeller: user.isSeller,
+        userType: user.userType,
+        sellerId: user.sellerId,
+      },
+      seller: seller ? {
+        _id: seller._id,
+        businessName: seller.businessName,
+        shopName: seller.shopName,
+      } : null
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // RESET: Remove seller status for testing
 app.post('/api/reset-seller', async (req, res) => {
   try {

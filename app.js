@@ -533,27 +533,25 @@ app.post('/auth/register-seller', async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found after seller creation' });
     }
 
-    // ✅ CRITICAL: Update user to mark as seller AND link sellerId
-    freshUser.isSeller = true;
-    freshUser.userType = 'seller'; // Also set userType for compatibility
-    freshUser.sellerId = newSeller._id; // ✅ LINK to Seller document for data integrity
+    // ✅ CRITICAL: Update user via sellerInfo (nested schema)
+    freshUser.userType = 'seller';
+    freshUser.sellerInfo = { sellerId: newSeller._id };
 
-    console.log(`🔍 Pre-save check: isSeller=${freshUser.isSeller}, userType=${freshUser.userType}, sellerId=${freshUser.sellerId} (type: ${typeof freshUser.sellerId})`);
+    console.log(`🔍 Pre-save check: userType=${freshUser.userType}, sellerInfo.sellerId=${freshUser.sellerInfo?.sellerId}`);
 
-    // 🔍 GROK FIX: Force mark fields as modified (tells Mongoose they changed)
-    freshUser.markModified('sellerId');
-    freshUser.markModified('isSeller');
+    // 🔍 GROK FIX: Force mark fields as modified
+    freshUser.markModified('sellerInfo');
     freshUser.markModified('userType');
 
     await freshUser.save({ validateModifiedOnly: true });
-    console.log(`✅ User saved: isSeller=${freshUser.isSeller}, userType=${freshUser.userType}, sellerId=${freshUser.sellerId}`);
+    console.log(`✅ User saved: userType=${freshUser.userType}, sellerInfo.sellerId=${freshUser.sellerInfo?.sellerId}`);
 
-    // 🔍 GROK FIX: IMMEDIATE DB VERIFY (critical diagnostic!)
-    const dbVerify = await User.findById(freshUser._id).select('isSeller userType sellerId email');
+    // 🔍 GROK FIX: IMMEDIATE DB VERIFY
+    const dbVerify = await User.findById(freshUser._id).select('userType sellerInfo email');
     console.log(`🗄️ DB IMMEDIATE CHECK: ${JSON.stringify(dbVerify)}`);
 
     // Issue new tokens with updated user status
-    const tokens = issueTokens(user);
+    const tokens = issueTokens(freshUser);
 
     console.log(`✅ Seller ${phoneNumber} (${businessName || shopName}) registered successfully`);
     console.log(`📍 GPS Location: ${shopLatitude}, ${shopLongitude}`);

@@ -60,6 +60,11 @@ const buildUserPayload = (user) => ({
   dateOfBirth: user.dateOfBirth,
   gender: user.gender,
   age: user.age || (user.dateOfBirth ? Math.floor((Date.now() - new Date(user.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null),
+  // ✅ Include seller/driver flags and IDs for frontend
+  isSeller: user.isSeller || false,
+  isDriver: user.isDriver || false,
+  sellerId: user.sellerId || null,
+  driverId: user.driverId || null,
 });
 
 const issueTokens = (user) => {

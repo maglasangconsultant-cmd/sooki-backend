@@ -883,6 +883,72 @@ app.get('/sellers/:sellerId/orders', async (req, res) => {
   }
 });
 
+// Get user photos
+app.get('/photos/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // TODO: Get photos from cloudinary or photos collection
+    const photos = [];
+    
+    res.json({ success: true, data: photos });
+  } catch (err) {
+    console.error('❌ Photos error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Get seller add-ons
+app.get('/api/addons', async (req, res) => {
+  try {
+    // TODO: Get add-ons from addons collection filtered by seller
+    const addons = [];
+    
+    res.json({ success: true, data: addons });
+  } catch (err) {
+    console.error('❌ Add-ons error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Get seller orders for management screen
+app.get('/orders/seller/:sellerId', async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+    
+    // TODO: Get orders from orders collection
+    const orders = [];
+    
+    res.json({ success: true, data: orders });
+  } catch (err) {
+    console.error('❌ Seller orders management error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Create payment verification request
+app.post('/payment-verification-request', async (req, res) => {
+  try {
+    const { userId, sellerId, items, paymentReceiptUrl, deliveryAddress, customerName, paymentMethod, summary } = req.body;
+    
+    console.log('💳 Payment verification request:', { userId, sellerId, items: items?.length });
+    
+    // TODO: Save to payment_verification_requests collection
+    
+    res.json({ 
+      success: true, 
+      message: 'Payment verification request created',
+      data: {
+        requestId: 'temp_' + Date.now(),
+        status: 'pending'
+      }
+    });
+  } catch (err) {
+    console.error('❌ Payment verification error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 // 404 Not Found Middleware
 app.use((req, res) => {
   res.status(404).json({

@@ -949,6 +949,42 @@ app.post('/payment-verification-request', async (req, res) => {
   }
 });
 
+// Get nearby sellers (for map)
+app.get('/sellers/nearby', async (req, res) => {
+  try {
+    const { lat, lng, maxDistance = 50000 } = req.query; // Default 50km radius
+    
+    // If coordinates provided, do geospatial query
+    if (lat && lng) {
+      const sellers = await Seller.find({
+        location: {
+          $near: {
+            $geometry: {
+              type: 'Point',
+              coordinates: [parseFloat(lng), parseFloat(lat)]
+            },
+            $maxDistance: parseInt(maxDistance)
+          }
+        }
+      }).select('shopName location categories bio hasPhysicalStore shopAddress');
+      
+      console.log(`📍 Found ${sellers.length} sellers near (${lat}, ${lng})`);
+      return res.json({ success: true, data: sellers });
+    }
+    
+    // Otherwise return all sellers with location data
+    const sellers = await Seller.find({
+      location: { $exists: true, $ne: null }
+    }).select('shopName location categories bio hasPhysicalStore shopAddress');
+    
+    console.log(`📍 Found ${sellers.length} total sellers with location`);
+    res.json({ success: true, data: sellers });
+  } catch (err) {
+    console.error('❌ Nearby sellers error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 // 404 Not Found Middleware
 app.use((req, res) => {
   res.status(404).json({

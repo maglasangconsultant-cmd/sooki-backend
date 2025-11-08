@@ -815,6 +815,74 @@ app.use('/api/psgc', psgcRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/products', productRoutes);
 
+// ===== SELLER DASHBOARD ENDPOINTS =====
+
+// Get seller analytics
+app.get('/sellers/:sellerId/analytics', async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+    
+    // TODO: Replace with real data from orders/products collections
+    const analytics = {
+      totalRevenue: 0,
+      totalOrders: 0,
+      totalProducts: 0,
+      averageOrderValue: 0,
+      salesData: [] // Array of {day: 1, revenue: 0}
+    };
+    
+    res.json({ success: true, data: analytics });
+  } catch (err) {
+    console.error('❌ Analytics error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Get seller top products
+app.get('/sellers/:sellerId/products/top', async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+    
+    // TODO: Get actual products from database
+    const topProducts = [];
+    
+    res.json({ success: true, data: topProducts });
+  } catch (err) {
+    console.error('❌ Top products error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Get seller inventory
+app.get('/sellers/:sellerId/inventory', async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+    
+    // TODO: Get actual inventory from products collection
+    const inventory = [];
+    
+    res.json({ success: true, data: inventory });
+  } catch (err) {
+    console.error('❌ Inventory error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Get seller orders
+app.get('/sellers/:sellerId/orders', async (req, res) => {
+  try {
+    const { sellerId } = req.params;
+    
+    // TODO: Get actual orders from orders collection
+    const orders = [];
+    
+    res.json({ success: true, data: { success: true, orders } });
+  } catch (err) {
+    console.error('❌ Orders error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 // 404 Not Found Middleware
 app.use((req, res) => {
   res.status(404).json({

@@ -35,15 +35,33 @@ const normalizePhoneNumber = (input = '') => {
   // Strip non-digits, keep last 11 digits for PH format
   const digitsOnly = input.replace(/\D/g, '');
   if (!digitsOnly) return '';
+  
+  let normalized = '';
+  
+  // Handle international format with country code 63
   if (digitsOnly.startsWith('63') && digitsOnly.length === 12) {
-    return `0${digitsOnly.slice(2)}`;
+    normalized = `0${digitsOnly.slice(2)}`;
   }
-  if (digitsOnly.startsWith('9') && digitsOnly.length === 10) {
-    return `0${digitsOnly}`;
+  // Handle mobile number without leading 0 (9XXXXXXXXX)
+  else if (digitsOnly.startsWith('9') && digitsOnly.length === 10) {
+    normalized = `0${digitsOnly}`;
   }
-  return digitsOnly.length === 11 && digitsOnly.startsWith('0')
-    ? digitsOnly
-    : input.trim();
+  // Handle standard PH mobile format (09XXXXXXXXX)
+  else if (digitsOnly.length === 11 && digitsOnly.startsWith('09')) {
+    normalized = digitsOnly;
+  }
+  else {
+    // Invalid format - return empty string to trigger validation error
+    return '';
+  }
+  
+  // Final validation: must be 11 digits starting with 09
+  // This catches edge cases like "631234567890" which would normalize to "01234567890"
+  if (!/^09\d{9}$/.test(normalized)) {
+    return '';
+  }
+  
+  return normalized;
 };
 
 const buildUserPayload = (user) => ({
